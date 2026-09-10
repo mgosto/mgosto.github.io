@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070a14;
+    --ink:#eef1f8;
+    --muted:#8a93ad;
+    --line:rgba(255,255,255,.08);
+    --card-radius:20px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:
+      radial-gradient(120% 90% at 15% -10%, #12183a 0%, transparent 55%),
+      radial-gradient(120% 90% at 90% 0%, #241436 0%, transparent 50%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Space Grotesk',system-ui,sans-serif;
+    min-height:100%;
+    padding:clamp(20px,4vw,56px);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1200px;margin:0 auto}
+
+  /* ---- header ---- */
+  header{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:24px;flex-wrap:wrap;margin-bottom:clamp(24px,4vw,44px);
+  }
+  .brand h1{
+    font-size:clamp(1.9rem,4.2vw,3rem);
+    font-weight:600;letter-spacing:-.03em;line-height:.95;
+  }
+  .brand p{
+    color:var(--muted);font-weight:400;margin-top:10px;
+    font-size:.95rem;letter-spacing:.01em;max-width:42ch;
+  }
+  .toggle{
+    display:inline-flex;border:1px solid var(--line);border-radius:999px;
+    padding:4px;background:rgba(255,255,255,.03);backdrop-filter:blur(6px);
+  }
+  .toggle button{
+    font:inherit;font-size:.9rem;font-weight:500;color:var(--muted);
+    background:none;border:0;cursor:pointer;padding:8px 16px;border-radius:999px;
+    transition:color .2s ease,background .2s ease;
+  }
+  .toggle button.on{color:#0a0d18;background:var(--ink)}
+  .toggle button:focus-visible{outline:2px solid #7aa2ff;outline-offset:2px}
+
+  /* ---- shared card ---- */
+  .card{
+    position:relative;overflow:hidden;border-radius:var(--card-radius);
+    border:1px solid var(--line);
+    box-shadow:0 24px 50px -30px rgba(0,0,0,.7);
+    isolation:isolate;
+  }
+  .card .sky{position:absolute;inset:0;z-index:-1;transition:background .9s linear}
+  .card .veil{position:absolute;inset:0;z-index:-1;pointer-events:none}
+  .city{font-weight:600;letter-spacing:-.01em}
+  .offset{
+    font-weight:500;font-size:.82rem;letter-spacing:.02em;
+    padding:4px 10px;border-radius:999px;
+    background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.14);
+    white-space:nowrap;
+  }
+  .time{
+    font-weight:500;letter-spacing:-.02em;line-height:1;
+    font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
+    display:flex;align-items:baseline;gap:.12em;
+  }
+  .time .sec{opacity:.55;font-weight:400}
+  .time .mer{font-size:.34em;font-weight:500;opacity:.8;margin-left:.15em;letter-spacing:.04em}
+  .date{font-weight:400;opacity:.82}
+
+  /* daylight track */
+  .track{position:relative;height:3px;border-radius:2px;background:rgba(0,0,0,.22);overflow:visible}
+  .track .now{
+    position:absolute;top:50%;width:10px;height:10px;border-radius:50%;
+    transform:translate(-50%,-50%);box-shadow:0 0 0 3px rgba(0,0,0,.15);
+  }
+  .track .tick{position:absolute;top:50%;width:1px;height:8px;transform:translate(-50%,-50%);background:rgba(255,255,255,.25)}
+
+  /* ---- hero (UTC) ---- */
+  .hero{
+    padding:clamp(26px,4vw,44px);margin-bottom:clamp(16px,2.4vw,26px);
+    display:grid;grid-template-columns:1fr auto;gap:20px 30px;align-items:center;
+  }
+  .hero .head{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+  .hero .city{font-size:clamp(1.1rem,2vw,1.4rem)}
+  .hero .full{color:inherit;opacity:.6;font-weight:400;font-size:.9rem;letter-spacing:.02em}
+  .hero .time{font-size:clamp(3.2rem,13vw,7.2rem)}
+  .hero .meta{display:flex;flex-direction:column;align-items:flex-end;gap:14px;text-align:right}
+  .hero .date{font-size:clamp(1rem,2.2vw,1.25rem)}
+  .hero .track{grid-column:1/-1;margin-top:6px}
+
+  /* ---- grid ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:clamp(12px,1.6vw,18px)}
+  .tile{padding:22px 22px 18px;display:flex;flex-direction:column;gap:16px;min-height:200px}
+  .tile .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .tile .city{font-size:1.18rem}
+  .tile .time{font-size:clamp(2.1rem,5.2vw,2.7rem);margin-top:auto}
+  .tile .date{font-size:.9rem}
+  .tile .track{margin-top:2px}
+
+  /* entrance */
+  @media (prefers-reduced-motion:no-preference){
+    .reveal{opacity:0;transform:translateY(14px);animation:rise .7s cubic-bezier(.2,.7,.2,1) forwards}
+    @keyframes rise{to{opacity:1;transform:none}}
+  }
+  footer{margin-top:36px;color:var(--muted);font-size:.82rem;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>World Clock</h1>
+      <p>Live local time across eight cities, following the sun from Coordinated Universal Time out to Maui. Colors track each city's sky.</p>
+    </div>
+    <div class="toggle" role="group" aria-label="Time format">
+      <button id="b24" class="on">24h</button>
+      <button id="b12">12h</button>
+    </div>
+  </header>
+
+  <section class="card hero reveal" id="hero" aria-label="UTC time"></section>
+  <div class="grid" id="grid"></div>
+
+  <footer>Updates every second · daylight saving handled automatically by your browser.</footer>
+</div>
+
+<script>
+const HERO = { name:'UTC', full:'Coordinated Universal Time', tz:'UTC' };
+const ZONES = [
+  { name:'Paris',        tz:'Europe/Paris' },
+  { name:'London',       tz:'Europe/London' },
+  { name:'New York',     tz:'America/New_York' },
+  { name:'Chicago',      tz:'America/Chicago' },
+  { name:'Denver',       tz:'America/Denver' },
+  { name:'Los Angeles',  tz:'America/Los_Angeles' },
+  { name:'Maui',         tz:'Pacific/Honolulu' },
+];
+
+let hour12 = false;
+
+/* --- sky model --- */
+const STOPS = [
+  {h:0,   a:[10,14,36],   b:[5,7,15]},
+  {h:5,   a:[27,23,64],   b:[36,26,58]},
+  {h:6.5, a:[106,74,122], b:[217,138,134]},
+  {h:8,   a:[143,176,224],b:[246,215,168]},
+  {h:12,  a:[77,144,208], b:[191,224,255]},
+  {h:15,  a:[93,151,207], b:[233,211,160]},
+  {h:18,  a:[201,120,79], b:[122,63,110]},
+  {h:19.5,a:[163,74,99],  b:[46,36,80]},
+  {h:21,  a:[20,22,52],   b:[10,12,31]},
+  {h:24,  a:[10,14,36],   b:[5,7,15]},
+];
+const lerp=(a,b,t)=>a+(b-a)*t;
+const mix=(c1,c2,t)=>[Math.round(lerp(c1[0],c2[0],t)),Math.round(lerp(c1[1],c2[1],t)),Math.round(lerp(c1[2],c2[2],t))];
+function sky(h){
+  for(let i=0;i<STOPS.length-1;i++){
+    const s=STOPS[i],e=STOPS[i+1];
+    if(h>=s.h && h<=e.h){const t=(h-s.h)/(e.h-s.h);return {a:mix(s.a,e.a,t),b:mix(s.b,e.b,t)};}
+  }
+  return {a:STOPS[0].a,b:STOPS[0].b};
+}
+function lum(c){const l=c.map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);});return .2126*l[0]+.7152*l[1]+.0722*l[2];}
+const rgb=c=>`rgb(${c[0]},${c[1]},${c[2]})`;
+
+function skyStyle(h){
+  const {a,b}=sky(h);
+  const day = h>=6 && h<18.5;
+  const noonDist = Math.min(Math.abs(h-12)/6,1);
+  const gx=(h/24)*100, gy = day ? 6+noonDist*52 : 18;
+  const gc = day ? '255,236,190' : '200,212,255';
+  const ga = day ? Math.max(.45-noonDist*.22,.12) : .15;
+  const bg = `radial-gradient(90% 70% at ${gx}% ${gy}%, rgba(${gc},${ga}) 0%, transparent 55%),`
+           + `linear-gradient(158deg, ${rgb(a)} 0%, ${rgb(b)} 100%)`;
+  const light = lum([(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2]) > .42;
+  return { bg, ink: light ? '#101422' : '#f3f6ff', dim: light ? 'rgba(16,20,34,.62)' : 'rgba(243,246,255,.66)', day };
+}
+
+/* --- time parts --- */
+function parts(tz){
+  const d=new Date();
+  const o={};
+  const f=new Intl.DateTimeFormat('en-US',{timeZone:tz,hour12:false,weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  for(const p of f.formatToParts(d)) o[p.type]=p.value;
+  let hour=parseInt(o.hour,10); if(hour===24) hour=0;
+  let off='UTC';
+  try{
+    const op=new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'shortOffset'}).formatToParts(d).find(p=>p.type==='timeZoneName');
+    if(op) off=op.value.replace('GMT','UTC').replace('-','\u2212');
+    if(off==='UTC') off='UTC+0';
+  }catch(e){}
+  return {hour,minute:parseInt(o.minute,10),second:parseInt(o.second,10),weekday:o.weekday,month:o.month,day:o.day,off};
+}
+const pad=n=>String(n).padStart(2,'0');
+
+function timeHTML(p){
+  let h=p.hour, mer='';
+  if(hour12){ mer=h>=12?'PM':'AM'; h=h%12; if(h===0)h=12; }
+  return `<span class="hm">${hour12?h:pad(h)}<span class="colon">:</span>${pad(p.minute)}</span>`
+       + `<span class="sec">:${pad(p.second)}</span>`
+       + (mer?`<span class="mer">${mer}</span>`:'');
+}
+
+/* --- build --- */
+const heroEl=document.getElementById('hero');
+const gridEl=document.getElementById('grid');
+const refs=[];
+
+function buildHero(){
+  heroEl.innerHTML=`
+    <div class="sky"></div>
+    <div class="head">
+      <span class="city">UTC <span class="full">Coordinated Universal Time</span></span>
+      <span class="offset">reference</span>
+    </div>
+    <div class="time"></div>
+    <div class="meta"><div class="date"></div></div>
+    <div class="track"><span class="tick" style="left:25%"></span><span class="tick" style="left:75%"></span><span class="now"></span></div>`;
+  refs.push({el:heroEl,tz:HERO.tz,time:heroEl.querySelector('.time'),date:heroEl.querySelector('.date'),sky:heroEl.querySelector('.sky'),now:heroEl.querySelector('.now'),offset:null});
+}
+function buildTiles(){
+  ZONES.forEach((z,i)=>{
+    const c=document.createElement('section');
+    c.className='card tile reveal';
+    c.style.animationDelay=(0.05*(i+1))+'s';
+    c.innerHTML=`
+      <div class="sky"></div>
+      <div class="top"><span class="city">${z.name}</span><span class="offset"></span></div>
+      <div class="time"></div>
+      <div class="date"></div>
+      <div class="track"><span class="tick" style="left:25%"></span><span class="tick" style="left:75%"></span><span class="now"></span></div>`;
+    gridEl.appendChild(c);
+    refs.push({el:c,tz:z.tz,time:c.querySelector('.time'),date:c.querySelector('.date'),sky:c.querySelector('.sky'),now:c.querySelector('.now'),offset:c.querySelector('.offset')});
+  });
+}
+
+function paint(){
+  for(const r of refs){
+    const p=parts(r.tz);
+    const hf=p.hour+p.minute/60+p.second/3600;
+    const st=skyStyle(hf);
+    r.sky.style.background=st.bg;
+    r.el.style.color=st.ink;
+    r.time.innerHTML=timeHTML(p);
+    r.date.textContent=`${p.weekday}, ${p.month} ${p.day}`;
+    r.date.style.color=st.dim;
+    if(r.offset) r.offset.textContent=p.off;
+    const nowdot=r.now;
+    nowdot.style.left=(hf/24*100)+'%';
+    nowdot.style.background=st.day?'#ffe9b0':'#cdd6ff';
+    nowdot.style.boxShadow=`0 0 10px 2px ${st.day?'rgba(255,220,140,.7)':'rgba(180,196,255,.55)'}`;
+  }
+}
+
+/* colon styling injected */
+const s=document.createElement('style');
+s.textContent='.time .colon{opacity:.5;margin:0 .01em}.time .hm{display:inline-flex;align-items:baseline}';
+document.head.appendChild(s);
+
+buildHero(); buildTiles(); paint();
+
+let last=-1;
+function loop(){
+  const s=new Date().getSeconds();
+  if(s!==last){ last=s; paint(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+const b24=document.getElementById('b24'), b12=document.getElementById('b12');
+function setFmt(v){hour12=v; b24.classList.toggle('on',!v); b12.classList.toggle('on',v); paint();}
+b24.onclick=()=>setFmt(false);
+b12.onclick=()=>setFmt(true);
+</script>
+</body>
+</html>
