@@ -3,57 +3,78 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
 <title>World Clock</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Registered so the light/dark ink flip at dawn and dusk crossfades
+     instead of snapping. Sky gradients are repainted every second and are
+     deliberately left untransitioned. */
+  @property --dim   { syntax:'<color>'; inherits:false; initial-value:rgba(243,246,255,.66) }
+  @property --scrim { syntax:'<color>'; inherits:false; initial-value:rgba(0,0,0,.24) }
+  @property --edge  { syntax:'<color>'; inherits:false; initial-value:rgba(255,255,255,.16) }
+
   :root{
     --bg:#070a14;
     --ink:#eef1f8;
     --muted:#8a93ad;
     --line:rgba(255,255,255,.08);
-    --card-radius:20px;
+    --card-radius:clamp(16px,1.4vw,22px);
+    --ease:cubic-bezier(.2,.8,.2,1);
+    --gap:clamp(12px,1.6vw,18px);
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none !important}
+  html{scrollbar-gutter:stable}
   html,body{height:100%}
   body{
     background:
       radial-gradient(120% 90% at 15% -10%, #12183a 0%, transparent 55%),
       radial-gradient(120% 90% at 90% 0%, #241436 0%, transparent 50%),
       var(--bg);
+    background-attachment:fixed;
     color:var(--ink);
     font-family:'Space Grotesk',system-ui,sans-serif;
     min-height:100%;
-    padding:clamp(20px,4vw,56px);
+    padding:clamp(18px,4vw,56px);
     -webkit-font-smoothing:antialiased;
   }
-  .wrap{max-width:1200px;margin:0 auto}
+  body.is-dragging{cursor:grabbing;user-select:none}
+  .wrap{max-width:1240px;margin:0 auto}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  :focus-visible{outline:2px solid #7aa2ff;outline-offset:3px;border-radius:6px}
 
   /* ---- header ---- */
   header{
     display:flex;align-items:flex-end;justify-content:space-between;
-    gap:24px;flex-wrap:wrap;margin-bottom:clamp(24px,4vw,44px);
+    gap:clamp(16px,3vw,28px);flex-wrap:wrap;margin-bottom:clamp(22px,4vw,44px);
   }
   .brand h1{
-    font-size:clamp(1.9rem,4.2vw,3rem);
+    font-size:clamp(1.8rem,4.2vw,3rem);
     font-weight:600;letter-spacing:-.03em;line-height:.95;
   }
   .brand p{
     color:var(--muted);font-weight:400;margin-top:10px;
-    font-size:.95rem;letter-spacing:.01em;max-width:42ch;
+    font-size:clamp(.86rem,1.2vw,.95rem);letter-spacing:.01em;max-width:46ch;line-height:1.5;
   }
   .toggle{
-    display:inline-flex;border:1px solid var(--line);border-radius:999px;
-    padding:4px;background:rgba(255,255,255,.03);backdrop-filter:blur(6px);
+    position:relative;display:inline-flex;border:1px solid var(--line);border-radius:999px;
+    padding:4px;background:rgba(255,255,255,.03);backdrop-filter:blur(6px);flex:0 0 auto;
   }
+  .toggle .thumb{
+    position:absolute;top:4px;bottom:4px;left:4px;width:calc(50% - 4px);
+    border-radius:999px;background:var(--ink);
+    transition:transform .4s var(--ease);
+  }
+  .toggle.alt .thumb{transform:translateX(100%)}
   .toggle button{
-    font:inherit;font-size:.9rem;font-weight:500;color:var(--muted);
+    position:relative;z-index:1;font:inherit;font-size:.9rem;font-weight:500;color:var(--muted);
     background:none;border:0;cursor:pointer;padding:8px 16px;border-radius:999px;
-    transition:color .2s ease,background .2s ease;
+    transition:color .3s var(--ease);
   }
-  .toggle button.on{color:#0a0d18;background:var(--ink)}
-  .toggle button:focus-visible{outline:2px solid #7aa2ff;outline-offset:2px}
+  .toggle button.on{color:#0a0d18}
 
   /* ---- shared card ---- */
   .card{
@@ -61,97 +82,249 @@
     border:1px solid var(--line);
     box-shadow:0 24px 50px -30px rgba(0,0,0,.7);
     isolation:isolate;
+    transition:color .8s var(--ease),--dim .8s var(--ease),--scrim .8s var(--ease),
+               --edge .8s var(--ease),transform .5s var(--ease),box-shadow .5s var(--ease);
   }
-  .card .sky{position:absolute;inset:0;z-index:-1;transition:background .9s linear}
-  .card .veil{position:absolute;inset:0;z-index:-1;pointer-events:none}
-  .city{font-weight:600;letter-spacing:-.01em}
+  .card .sky{position:absolute;inset:0;z-index:-1}
+  .city{font-weight:600;letter-spacing:-.01em;display:block}
+  .region{display:block;font-weight:400;font-size:.72rem;letter-spacing:.06em;
+          text-transform:uppercase;color:var(--dim);margin-top:3px}
   .offset{
-    font-weight:500;font-size:.82rem;letter-spacing:.02em;
+    font-weight:500;font-size:.8rem;letter-spacing:.02em;
     padding:4px 10px;border-radius:999px;
-    background:rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.14);
-    white-space:nowrap;
+    background:var(--scrim);border:1px solid var(--edge);
+    white-space:nowrap;flex:0 0 auto;
   }
   .time{
     font-weight:500;letter-spacing:-.02em;line-height:1;
     font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;
     display:flex;align-items:baseline;gap:.12em;
   }
+  .time .hm{display:inline-flex;align-items:baseline}
+  .time .colon{opacity:.5;margin:0 .01em}
   .time .sec{opacity:.55;font-weight:400}
   .time .mer{font-size:.34em;font-weight:500;opacity:.8;margin-left:.15em;letter-spacing:.04em}
-  .date{font-weight:400;opacity:.82}
+  .date{font-weight:400;color:var(--dim)}
 
   /* daylight track */
-  .track{position:relative;height:3px;border-radius:2px;background:rgba(0,0,0,.22);overflow:visible}
+  .track{position:relative;height:3px;border-radius:2px;background:var(--scrim);overflow:visible}
+  .track .fill{
+    position:absolute;left:0;top:0;bottom:0;border-radius:2px;
+    background:linear-gradient(90deg,transparent,currentColor);opacity:.4;
+  }
   .track .now{
     position:absolute;top:50%;width:10px;height:10px;border-radius:50%;
-    transform:translate(-50%,-50%);box-shadow:0 0 0 3px rgba(0,0,0,.15);
+    transform:translate(-50%,-50%);
   }
-  .track .tick{position:absolute;top:50%;width:1px;height:8px;transform:translate(-50%,-50%);background:rgba(255,255,255,.25)}
+  .track .tick{position:absolute;top:50%;width:1px;height:8px;transform:translate(-50%,-50%);background:var(--edge)}
 
   /* ---- hero (UTC) ---- */
   .hero{
-    padding:clamp(26px,4vw,44px);margin-bottom:clamp(16px,2.4vw,26px);
-    display:grid;grid-template-columns:1fr auto;gap:20px 30px;align-items:center;
+    padding:clamp(22px,4vw,44px);margin-bottom:var(--gap);
+    display:grid;grid-template-columns:minmax(0,1fr) auto;
+    gap:clamp(14px,2vw,20px) clamp(20px,3vw,30px);align-items:center;
   }
   .hero .head{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
-  .hero .city{font-size:clamp(1.1rem,2vw,1.4rem)}
-  .hero .full{color:inherit;opacity:.6;font-weight:400;font-size:.9rem;letter-spacing:.02em}
-  .hero .time{font-size:clamp(3.2rem,13vw,7.2rem)}
+  .hero .city{font-size:clamp(1.05rem,2vw,1.4rem)}
+  .hero .full{color:var(--dim);font-weight:400;font-size:.9rem;letter-spacing:.02em}
+  .hero .time{font-size:clamp(2.8rem,13vw,7.2rem)}
   .hero .meta{display:flex;flex-direction:column;align-items:flex-end;gap:14px;text-align:right}
-  .hero .date{font-size:clamp(1rem,2.2vw,1.25rem)}
+  .hero .date{font-size:clamp(.95rem,2.2vw,1.25rem)}
   .hero .track{grid-column:1/-1;margin-top:6px}
+  /* the date needs its own row before the time crowds it out */
+  @media (max-width:680px){
+    .hero{grid-template-columns:minmax(0,1fr)}
+    .hero .meta{align-items:flex-start;text-align:left}
+  }
 
   /* ---- grid ---- */
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:clamp(12px,1.6vw,18px)}
-  .tile{padding:22px 22px 18px;display:flex;flex-direction:column;gap:16px;min-height:200px}
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(min(230px,100%),1fr));
+    gap:var(--gap);align-items:stretch;
+    overflow-anchor:none;
+  }
+  .tile{
+    container-type:inline-size;
+    padding:20px 20px 16px;display:flex;flex-direction:column;gap:clamp(12px,4cqi,16px);
+    min-height:clamp(180px,46cqi,215px);
+  }
   .tile .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-  .tile .city{font-size:1.18rem}
-  .tile .time{font-size:clamp(2.1rem,5.2vw,2.7rem);margin-top:auto}
-  .tile .date{font-size:.9rem}
-  .tile .track{margin-top:2px}
+  .tile .city{font-size:clamp(1.02rem,7.4cqi,1.22rem)}
+  .tile .time{font-size:clamp(1.9rem,19cqi,2.7rem);margin-top:auto}
+  .tile .foot{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .tile .date{font-size:clamp(.8rem,4cqi,.9rem)}
+  @media (hover:hover){
+    .tile:hover{transform:translateY(-4px);box-shadow:0 34px 60px -32px rgba(0,0,0,.85)}
+  }
+  .tile.dragging{
+    z-index:5;box-shadow:0 40px 70px -26px rgba(0,0,0,.9);
+    transition:color .8s var(--ease);cursor:grabbing;
+  }
+  .tile.dragging:hover{transform:none}
+  body.is-dragging .tile:hover{transform:none}
 
-  /* entrance */
+  /* ---- per-tile controls ---- */
+  .controls{
+    position:absolute;top:9px;right:9px;display:flex;gap:6px;z-index:2;
+    opacity:0;transform:translateY(-5px);
+    transition:opacity .3s var(--ease),transform .3s var(--ease);
+  }
+  .tile:hover .controls,.tile:focus-within .controls,.tile.dragging .controls{opacity:1;transform:none}
+  @media (hover:none){.controls{opacity:1;transform:none}}
+  .ctl{
+    width:30px;height:30px;display:grid;place-items:center;border-radius:10px;
+    color:inherit;background:var(--scrim);border:1px solid var(--edge);
+    cursor:pointer;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    transition:background .25s var(--ease),transform .25s var(--ease),opacity .25s var(--ease);
+  }
+  .ctl:hover{transform:translateY(-2px)}
+  .ctl:active{transform:scale(.92)}
+  .ctl svg{width:15px;height:15px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;
+           stroke-linecap:round;stroke-linejoin:round}
+  .ctl.handle{cursor:grab;touch-action:none}
+  .tile.dragging .ctl.handle{cursor:grabbing}
+  .tile.kb-active{outline:2px solid #7aa2ff;outline-offset:3px}
+
+  /* ---- manage bar ---- */
+  .manage{
+    display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+    gap:12px 18px;margin-top:clamp(18px,2.6vw,28px);
+  }
+  .hidden-list{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .manage-right{display:flex;align-items:center;gap:14px;margin-left:auto}
+  .mlabel{color:var(--muted);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase}
+  .chip,.ghost{
+    font:inherit;font-size:.85rem;color:var(--ink);cursor:pointer;
+    border:1px solid var(--line);border-radius:999px;
+    background:rgba(255,255,255,.04);
+    transition:background .25s var(--ease),border-color .25s var(--ease),transform .25s var(--ease),opacity .25s var(--ease);
+  }
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px 7px 10px}
+  .chip svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round}
+  .ghost{padding:8px 15px;color:var(--muted)}
+  .chip:hover,.ghost:hover{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.18);transform:translateY(-2px)}
+  .ghost:hover{color:var(--ink)}
+  .count{color:var(--muted);font-size:.8rem;letter-spacing:.02em}
+  .empty{
+    grid-column:1/-1;border:1px dashed var(--line);border-radius:var(--card-radius);
+    padding:clamp(28px,6vw,52px);text-align:center;color:var(--muted);font-size:.92rem;
+  }
+  footer{margin-top:clamp(24px,4vw,36px);color:var(--muted);font-size:.8rem;letter-spacing:.02em;line-height:1.6}
+  footer kbd{
+    font:inherit;font-size:.74rem;padding:1px 6px;border-radius:5px;
+    border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);
+  }
+
+  /* ---- entrance ---- */
   @media (prefers-reduced-motion:no-preference){
-    .reveal{opacity:0;transform:translateY(14px);animation:rise .7s cubic-bezier(.2,.7,.2,1) forwards}
+    .reveal{opacity:0;transform:translateY(16px) scale(.98);animation:rise .75s var(--ease) forwards}
     @keyframes rise{to{opacity:1;transform:none}}
   }
-  footer{margin-top:36px;color:var(--muted);font-size:.82rem;letter-spacing:.02em}
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
+  }
+  /* suppress the first frame of transitions on load */
+  body.booting .card,body.booting .toggle .thumb{transition:none}
 </style>
 </head>
-<body>
+<body class="booting">
 <div class="wrap">
   <header>
     <div class="brand">
       <h1>World Clock</h1>
-      <p>Live local time across eight cities, following the sun from Coordinated Universal Time out to Maui. Colors track each city's sky.</p>
+      <p>Live local time around the world, ordered east to west so the tiles follow the sun. Colors track each city's sky. Drag a tile to reorder it, or hide the ones you don't need.</p>
     </div>
-    <div class="toggle" role="group" aria-label="Time format">
-      <button id="b24" class="on">24h</button>
-      <button id="b12">12h</button>
+    <div class="toggle" id="toggle" role="group" aria-label="Time format">
+      <span class="thumb" aria-hidden="true"></span>
+      <button id="b24" class="on" aria-pressed="true">24h</button>
+      <button id="b12" aria-pressed="false">12h</button>
     </div>
   </header>
 
-  <section class="card hero reveal" id="hero" aria-label="UTC time"></section>
-  <div class="grid" id="grid"></div>
+  <section class="card hero reveal" id="hero" aria-label="Coordinated Universal Time"></section>
+  <div class="grid" id="grid" role="list"></div>
 
-  <footer>Updates every second · daylight saving handled automatically by your browser.</footer>
+  <div class="manage">
+    <div class="hidden-list" id="hiddenList" hidden>
+      <span class="mlabel">Hidden</span>
+    </div>
+    <div class="manage-right">
+      <p class="count" id="count"></p>
+      <button class="ghost" id="reset" hidden>Reset layout</button>
+    </div>
+  </div>
+
+  <footer>
+    Updates every second · daylight saving handled automatically by your browser.<br>
+    Drag the grip to reorder, or focus it and use <kbd>&larr;</kbd> <kbd>&rarr;</kbd> <kbd>&uarr;</kbd> <kbd>&darr;</kbd>. Your layout is remembered on this device.
+  </footer>
+
+  <p class="sr" id="live" aria-live="polite"></p>
 </div>
 
 <script>
 const HERO = { name:'UTC', full:'Coordinated Universal Time', tz:'UTC' };
+// Ordered east to west, so the grid reads as the sun crossing the globe.
 const ZONES = [
-  { name:'Paris',        tz:'Europe/Paris' },
-  { name:'London',       tz:'Europe/London' },
-  { name:'New York',     tz:'America/New_York' },
-  { name:'Chicago',      tz:'America/Chicago' },
-  { name:'Denver',       tz:'America/Denver' },
-  { name:'Los Angeles',  tz:'America/Los_Angeles' },
-  { name:'Maui',         tz:'Pacific/Honolulu' },
+  { id:'fiji',        name:'Suva',        region:'Fiji',           tz:'Pacific/Fiji' },
+  { id:'magadan',     name:'Magadan',     region:'Russia',         tz:'Asia/Magadan' },
+  { id:'sydney',      name:'Sydney',      region:'Australia',      tz:'Australia/Sydney' },
+  { id:'tokyo',       name:'Tokyo',       region:'Japan',          tz:'Asia/Tokyo' },
+  { id:'taipei',      name:'Taipei',      region:'Taiwan',         tz:'Asia/Taipei' },
+  { id:'bangkok',     name:'Bangkok',     region:'Thailand',       tz:'Asia/Bangkok' },
+  { id:'dhaka',       name:'Dhaka',       region:'Bangladesh',     tz:'Asia/Dhaka' },
+  { id:'karachi',     name:'Karachi',     region:'Pakistan',       tz:'Asia/Karachi' },
+  { id:'abudhabi',    name:'Abu Dhabi',   region:'UAE',            tz:'Asia/Dubai' },
+  { id:'cairo',       name:'Cairo',       region:'Egypt',          tz:'Africa/Cairo' },
+  { id:'paris',       name:'Paris',       region:'France',         tz:'Europe/Paris' },
+  { id:'london',      name:'London',      region:'United Kingdom', tz:'Europe/London' },
+  { id:'nuuk',        name:'Nuuk',        region:'Greenland',      tz:'America/Nuuk' },
+  { id:'noronha',     name:'Noronha',     region:'Brazil',         tz:'America/Noronha' },
+  { id:'buenosaires', name:'Buenos Aires',region:'Argentina',      tz:'America/Argentina/Buenos_Aires' },
+  { id:'newyork',     name:'New York',    region:'United States',  tz:'America/New_York' },
+  { id:'chicago',     name:'Chicago',     region:'United States',  tz:'America/Chicago' },
+  { id:'denver',      name:'Denver',      region:'United States',  tz:'America/Denver' },
+  { id:'losangeles',  name:'Los Angeles', region:'United States',  tz:'America/Los_Angeles' },
+  { id:'pitcairn',    name:'Pitcairn',    region:'South Pacific',  tz:'Pacific/Pitcairn' },
+  { id:'gambier',     name:'Gambier',     region:'French Polynesia',tz:'Pacific/Gambier' },
+  { id:'maui',        name:'Maui',        region:'Hawaii',         tz:'Pacific/Honolulu' },
+  { id:'pagopago',    name:'Pago Pago',   region:'American Samoa', tz:'Pacific/Pago_Pago' },
+  { id:'baker',       name:'Baker Island',region:'United States',  tz:'Etc/GMT+12' },
 ];
+const BY_ID = new Map(ZONES.map(z => [z.id, z]));
+const DEFAULT_ORDER = ZONES.map(z => z.id);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const EASE = 'cubic-bezier(.2,.8,.2,1)';
 
-let hour12 = false;
+/* ---------- state ---------- */
+const KEY = 'worldclock.layout.v1';
+let state = { order:[...DEFAULT_ORDER], hidden:[], hour12:false };
 
-/* --- sky model --- */
+(function load(){
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e){}
+  if(!saved) return;
+  if(Array.isArray(saved.order)){
+    const keep = saved.order.filter(id => BY_ID.has(id));
+    // New cities added since the layout was saved land in their default spot.
+    const missing = DEFAULT_ORDER.filter(id => !keep.includes(id));
+    for(const id of missing) keep.splice(DEFAULT_ORDER.indexOf(id), 0, id);
+    state.order = keep;
+  }
+  if(Array.isArray(saved.hidden)) state.hidden = saved.hidden.filter(id => BY_ID.has(id));
+  state.hour12 = !!saved.hour12;
+})();
+
+function save(){
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e){}
+}
+const isHidden = id => state.hidden.includes(id);
+const visibleIds = () => state.order.filter(id => !isHidden(id));
+const isDefault = () =>
+  !state.hidden.length && state.order.every((id,i) => id === DEFAULT_ORDER[i]);
+
+/* ---------- sky model ---------- */
 const STOPS = [
   {h:0,   a:[10,14,36],   b:[5,7,15]},
   {h:5,   a:[27,23,64],   b:[36,26,58]},
@@ -176,6 +349,10 @@ function sky(h){
 function lum(c){const l=c.map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4);});return .2126*l[0]+.7152*l[1]+.0722*l[2];}
 const rgb=c=>`rgb(${c[0]},${c[1]},${c[2]})`;
 
+const INK_DARK='#101422', INK_LIGHT='#f3f6ff';
+const L_DARK=lum([16,20,34]), L_LIGHT=lum([243,246,255]);
+const ratio=(a,b)=>(Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+
 function skyStyle(h){
   const {a,b}=sky(h);
   const day = h>=6 && h<18.5;
@@ -183,107 +360,515 @@ function skyStyle(h){
   const gx=(h/24)*100, gy = day ? 6+noonDist*52 : 18;
   const gc = day ? '255,236,190' : '200,212,255';
   const ga = day ? Math.max(.45-noonDist*.22,.12) : .15;
-  const bg = `radial-gradient(90% 70% at ${gx}% ${gy}%, rgba(${gc},${ga}) 0%, transparent 55%),`
+  const bg = `radial-gradient(90% 70% at ${gx.toFixed(2)}% ${gy.toFixed(2)}%, rgba(${gc},${ga.toFixed(3)}) 0%, transparent 55%),`
            + `linear-gradient(158deg, ${rgb(a)} 0%, ${rgb(b)} 100%)`;
-  const light = lum([(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2]) > .42;
-  return { bg, ink: light ? '#101422' : '#f3f6ff', dim: light ? 'rgba(16,20,34,.62)' : 'rgba(243,246,255,.66)', day };
+  // Whichever ink reads better against the sky, rather than a fixed cut-off:
+  // pale dawn and sunset skies otherwise keep white text at ~2.4:1.
+  const L = lum([(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2]);
+  const onLight = ratio(L,L_DARK) >= ratio(L,L_LIGHT);
+  return {
+    bg, day,
+    ink:   onLight ? INK_DARK : INK_LIGHT,
+    dim:   onLight ? 'rgba(16,20,34,.66)'   : 'rgba(243,246,255,.66)',
+    scrim: onLight ? 'rgba(255,255,255,.32)': 'rgba(0,0,0,.24)',
+    edge:  onLight ? 'rgba(16,20,34,.16)'   : 'rgba(255,255,255,.16)',
+  };
 }
 
-/* --- time parts --- */
+/* ---------- time parts ---------- */
+const FMT = new Map();
+function formatters(tz){
+  let f = FMT.get(tz);
+  if(!f){
+    f = { clock:new Intl.DateTimeFormat('en-US',{timeZone:tz,hour12:false,weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}), zone:null };
+    try{ f.zone = new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'shortOffset'}); }catch(e){}
+    FMT.set(tz, f);
+  }
+  return f;
+}
 function parts(tz){
   const d=new Date();
   const o={};
-  const f=new Intl.DateTimeFormat('en-US',{timeZone:tz,hour12:false,weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  for(const p of f.formatToParts(d)) o[p.type]=p.value;
+  const f=formatters(tz);
+  for(const p of f.clock.formatToParts(d)) o[p.type]=p.value;
   let hour=parseInt(o.hour,10); if(hour===24) hour=0;
   let off='UTC';
-  try{
-    const op=new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'shortOffset'}).formatToParts(d).find(p=>p.type==='timeZoneName');
-    if(op) off=op.value.replace('GMT','UTC').replace('-','\u2212');
+  if(f.zone){
+    const op=f.zone.formatToParts(d).find(p=>p.type==='timeZoneName');
+    if(op) off=op.value.replace('GMT','UTC').replace('-','−');
     if(off==='UTC') off='UTC+0';
-  }catch(e){}
+  }
   return {hour,minute:parseInt(o.minute,10),second:parseInt(o.second,10),weekday:o.weekday,month:o.month,day:o.day,off};
 }
 const pad=n=>String(n).padStart(2,'0');
 
 function timeHTML(p){
   let h=p.hour, mer='';
-  if(hour12){ mer=h>=12?'PM':'AM'; h=h%12; if(h===0)h=12; }
-  return `<span class="hm">${hour12?h:pad(h)}<span class="colon">:</span>${pad(p.minute)}</span>`
+  if(state.hour12){ mer=h>=12?'PM':'AM'; h=h%12; if(h===0)h=12; }
+  return `<span class="hm">${state.hour12?h:pad(h)}<span class="colon">:</span>${pad(p.minute)}</span>`
        + `<span class="sec">:${pad(p.second)}</span>`
        + (mer?`<span class="mer">${mer}</span>`:'');
 }
 
-/* --- build --- */
-const heroEl=document.getElementById('hero');
-const gridEl=document.getElementById('grid');
-const refs=[];
+/* ---------- build ---------- */
+const ICON = {
+  grip:'<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="3.5" r=".9" fill="currentColor" stroke="none"/><circle cx="10" cy="3.5" r=".9" fill="currentColor" stroke="none"/><circle cx="6" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="10" cy="8" r=".9" fill="currentColor" stroke="none"/><circle cx="6" cy="12.5" r=".9" fill="currentColor" stroke="none"/><circle cx="10" cy="12.5" r=".9" fill="currentColor" stroke="none"/></svg>',
+  hide:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2l12 12"/><path d="M6.2 3.3A6.6 6.6 0 0 1 8 3c3.4 0 6 3 6.6 4.3.1.3.1.5 0 .8-.2.5-.9 1.6-2 2.5"/><path d="M11.3 11.4A6.7 6.7 0 0 1 8 13c-3.4 0-6-3-6.6-4.3a1 1 0 0 1 0-.8c.3-.6 1.1-1.9 2.5-3"/><path d="M6.6 6.6a2 2 0 0 0 2.8 2.8"/></svg>',
+  show:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>',
+};
+
+const heroEl = document.getElementById('hero');
+const gridEl = document.getElementById('grid');
+const hiddenListEl = document.getElementById('hiddenList');
+const countEl = document.getElementById('count');
+const resetEl = document.getElementById('reset');
+const liveEl = document.getElementById('live');
+
+const refs = [];            // painted clocks (hero + every tile)
+const cards = new Map();    // id -> tile element, built once and reused
+const rects = new Map();    // id -> page-space layout rect, for drag hit-testing
+
+function announce(msg){ liveEl.textContent = msg; }
+function focusChip(id){
+  const chip = hiddenListEl.querySelector(`.chip[data-id="${id}"]`);
+  if(chip) chip.focus({preventScroll:true});
+}
+
+function trackHTML(){
+  return `<div class="track" aria-hidden="true">
+      <span class="fill"></span>
+      <span class="tick" style="left:25%"></span>
+      <span class="tick" style="left:75%"></span>
+      <span class="now"></span>
+    </div>`;
+}
+function addRef(el, tz){
+  refs.push({
+    el, tz,
+    time:el.querySelector('.time'), date:el.querySelector('.date'),
+    sky:el.querySelector('.sky'), now:el.querySelector('.now'),
+    fill:el.querySelector('.fill'), offset:el.querySelector('.offset'),
+  });
+}
 
 function buildHero(){
   heroEl.innerHTML=`
     <div class="sky"></div>
     <div class="head">
-      <span class="city">UTC <span class="full">Coordinated Universal Time</span></span>
+      <span class="city">${HERO.name} <span class="full">${HERO.full}</span></span>
       <span class="offset">reference</span>
     </div>
     <div class="time"></div>
     <div class="meta"><div class="date"></div></div>
-    <div class="track"><span class="tick" style="left:25%"></span><span class="tick" style="left:75%"></span><span class="now"></span></div>`;
-  refs.push({el:heroEl,tz:HERO.tz,time:heroEl.querySelector('.time'),date:heroEl.querySelector('.date'),sky:heroEl.querySelector('.sky'),now:heroEl.querySelector('.now'),offset:null});
-}
-function buildTiles(){
-  ZONES.forEach((z,i)=>{
-    const c=document.createElement('section');
-    c.className='card tile reveal';
-    c.style.animationDelay=(0.05*(i+1))+'s';
-    c.innerHTML=`
-      <div class="sky"></div>
-      <div class="top"><span class="city">${z.name}</span><span class="offset"></span></div>
-      <div class="time"></div>
-      <div class="date"></div>
-      <div class="track"><span class="tick" style="left:25%"></span><span class="tick" style="left:75%"></span><span class="now"></span></div>`;
-    gridEl.appendChild(c);
-    refs.push({el:c,tz:z.tz,time:c.querySelector('.time'),date:c.querySelector('.date'),sky:c.querySelector('.sky'),now:c.querySelector('.now'),offset:c.querySelector('.offset')});
-  });
+    ${trackHTML()}`;
+  addRef(heroEl, HERO.tz);
+  refs[refs.length-1].offset = null;   // the hero pill is a static label
 }
 
-function paint(){
-  for(const r of refs){
-    const p=parts(r.tz);
-    const hf=p.hour+p.minute/60+p.second/3600;
-    const st=skyStyle(hf);
-    r.sky.style.background=st.bg;
-    r.el.style.color=st.ink;
-    r.time.innerHTML=timeHTML(p);
-    r.date.textContent=`${p.weekday}, ${p.month} ${p.day}`;
-    r.date.style.color=st.dim;
-    if(r.offset) r.offset.textContent=p.off;
-    const nowdot=r.now;
-    nowdot.style.left=(hf/24*100)+'%';
-    nowdot.style.background=st.day?'#ffe9b0':'#cdd6ff';
-    nowdot.style.boxShadow=`0 0 10px 2px ${st.day?'rgba(255,220,140,.7)':'rgba(180,196,255,.55)'}`;
+function buildCards(){
+  for(const z of ZONES){
+    const c=document.createElement('section');
+    c.className='card tile';
+    c.dataset.id=z.id;
+    c.setAttribute('role','listitem');
+    c.setAttribute('aria-label',`${z.name}, ${z.region}`);
+    c.innerHTML=`
+      <div class="sky"></div>
+      <div class="controls">
+        <button class="ctl handle" type="button" aria-label="Reorder ${z.name}"
+                title="Drag to reorder, or use the arrow keys">${ICON.grip}</button>
+        <button class="ctl hide" type="button" aria-label="Hide ${z.name}"
+                title="Hide ${z.name}">${ICON.hide}</button>
+      </div>
+      <div class="top"><span class="city">${z.name}<span class="region">${z.region}</span></span></div>
+      <div class="time"></div>
+      <div class="foot"><span class="date"></span><span class="offset"></span></div>
+      ${trackHTML()}`;
+    cards.set(z.id, c);
+    addRef(c, z.tz);
+    c.querySelector('.hide').addEventListener('click', () => hide(z.id));
+    const handle = c.querySelector('.handle');
+    handle.addEventListener('pointerdown', e => startDrag(e, z.id));
+    handle.addEventListener('keydown', e => onHandleKey(e, z.id));
   }
 }
 
-/* colon styling injected */
-const s=document.createElement('style');
-s.textContent='.time .colon{opacity:.5;margin:0 .01em}.time .hm{display:inline-flex;align-items:baseline}';
-document.head.appendChild(s);
-
-buildHero(); buildTiles(); paint();
-
-let last=-1;
-function loop(){
-  const s=new Date().getSeconds();
-  if(s!==last){ last=s; paint(); }
-  requestAnimationFrame(loop);
+/* ---------- FLIP: animate any layout change ---------- */
+function flip(mutate, skip){
+  const before = new Map();
+  for(const el of gridEl.children) before.set(el, el.getBoundingClientRect());
+  mutate();
+  measure();
+  if(REDUCED) return;
+  for(const el of gridEl.children){
+    const a = before.get(el);
+    if(!a || el === skip) continue;
+    const b = el.getBoundingClientRect();
+    const dx = a.left-b.left, dy = a.top-b.top;
+    if(!dx && !dy) continue;
+    el.animate(
+      [{transform:`translate(${dx}px,${dy}px)`},{transform:'none'}],
+      {duration:420, easing:EASE}
+    );
+  }
 }
-requestAnimationFrame(loop);
+function measure(){
+  rects.clear();
+  for(const el of gridEl.children){
+    if(!el.dataset.id) continue;
+    const r = el.getBoundingClientRect();
+    rects.set(el.dataset.id, {left:r.left+scrollX, top:r.top+scrollY, width:r.width, height:r.height});
+  }
+}
 
-const b24=document.getElementById('b24'), b12=document.getElementById('b12');
-function setFmt(v){hour12=v; b24.classList.toggle('on',!v); b12.classList.toggle('on',v); paint();}
-b24.onclick=()=>setFmt(false);
-b12.onclick=()=>setFmt(true);
+/* ---------- render ---------- */
+let placeholder = null;
+function render(){
+  for(const id of state.hidden){
+    const el = cards.get(id);
+    if(el && el.parentNode) el.remove();
+  }
+  const vis = visibleIds();
+  const current = [...gridEl.children].filter(el => el.dataset.id).map(el => el.dataset.id);
+  if(current.join() !== vis.join()){
+    for(const id of vis) gridEl.appendChild(cards.get(id));
+  }
+
+  if(!vis.length){
+    if(!placeholder){
+      placeholder = document.createElement('p');
+      placeholder.className = 'empty';
+      placeholder.setAttribute('role','none');
+      placeholder.textContent = 'Every city is hidden. Bring one back below.';
+    }
+    gridEl.appendChild(placeholder);
+  } else if(placeholder && placeholder.parentNode){
+    placeholder.remove();
+  }
+
+  renderManage();
+  paint();
+}
+
+function renderManage(){
+  for(const chip of [...hiddenListEl.querySelectorAll('.chip')]) chip.remove();
+  const hiddenOrdered = state.order.filter(isHidden);
+  hiddenListEl.hidden = hiddenOrdered.length === 0;
+  for(const id of hiddenOrdered){
+    const z = BY_ID.get(id);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.dataset.id = id;
+    chip.setAttribute('aria-label', `Show ${z.name}`);
+    chip.innerHTML = `${ICON.show}<span>${z.name}</span>`;
+    chip.addEventListener('click', () => show(id));
+    hiddenListEl.appendChild(chip);
+  }
+  const shown = state.order.length - hiddenOrdered.length;
+  countEl.textContent = `Showing ${shown} of ${state.order.length} cities`;
+  resetEl.hidden = isDefault();
+}
+
+/* ---------- hide / show / reset ---------- */
+function hide(id){
+  if(isHidden(id)) return;
+  const el = cards.get(id);
+  const done = () => {
+    flip(() => {
+      state.hidden.push(id);
+      save();
+      render();
+    });
+    focusChip(id);
+    announce(`${BY_ID.get(id).name} hidden. ${visibleIds().length} cities showing.`);
+  };
+  if(REDUCED || !el.parentNode) return done();
+  el.animate(
+    [{opacity:1,transform:'none'},{opacity:0,transform:'scale(.9)'}],
+    {duration:220, easing:'cubic-bezier(.4,0,1,1)'}
+  ).finished.then(done, done);
+}
+
+function show(id){
+  if(!isHidden(id)) return;
+  flip(() => {
+    state.hidden = state.hidden.filter(x => x !== id);
+    save();
+    render();
+  });
+  const el = cards.get(id);
+  if(!REDUCED) el.animate(
+    [{opacity:0,transform:'scale(.94)'},{opacity:1,transform:'none'}],
+    {duration:380, easing:EASE}
+  );
+  el.querySelector('.handle').focus({preventScroll:true});
+  announce(`${BY_ID.get(id).name} shown. ${visibleIds().length} cities showing.`);
+}
+
+resetEl.addEventListener('click', () => {
+  flip(() => {
+    state.order = [...DEFAULT_ORDER];
+    state.hidden = [];
+    save();
+    render();
+  });
+  announce('Layout reset. All cities showing in the default order.');
+});
+
+/* ---------- reordering ---------- */
+function moveTo(id, targetIndex){
+  const vis = visibleIds();
+  const from = vis.indexOf(id);
+  const to = Math.max(0, Math.min(vis.length-1, targetIndex));
+  if(from === to || from < 0) return false;
+  vis.splice(to, 0, ...vis.splice(from, 1));
+  // Stitch the visible sequence back into the full order, hidden cities in place.
+  const next = [];
+  let v = 0;
+  for(const oid of state.order) next.push(isHidden(oid) ? oid : vis[v++]);
+  state.order = next;
+  save();
+  return true;
+}
+
+function columns(){
+  const cols = getComputedStyle(gridEl).gridTemplateColumns.split(' ').filter(Boolean).length;
+  return Math.max(1, cols);
+}
+
+function onHandleKey(e, id){
+  const step = { ArrowLeft:-1, ArrowRight:1, ArrowUp:-columns(), ArrowDown:columns() }[e.key];
+  const vis = visibleIds();
+  const from = vis.indexOf(id);
+  let to = null;
+  if(step !== undefined) to = from + step;
+  else if(e.key === 'Home') to = 0;
+  else if(e.key === 'End') to = vis.length-1;
+  else return;
+  e.preventDefault();
+  if(!moveTo(id, to)) return;
+  const el = cards.get(id);
+  flip(() => render());
+  el.querySelector('.handle').focus();
+  el.classList.add('kb-active');
+  clearTimeout(el._kb);
+  el._kb = setTimeout(() => el.classList.remove('kb-active'), 900);
+  announce(`${BY_ID.get(id).name} moved to position ${visibleIds().indexOf(id)+1} of ${visibleIds().length}.`);
+}
+
+/* ---------- pointer drag ---------- */
+// Auto-scroll engages only once the pointer has left an edge band, so grabbing
+// a tile that already sits near the top doesn't send the page flying.
+const BAND = 64;
+let drag = null;
+
+function startDrag(e, id){
+  if(e.button !== 0 && e.pointerType === 'mouse') return;
+  if(drag) return;
+  const el = cards.get(id);
+  measure();
+  const r = rects.get(id);
+  if(!r) return;
+  e.preventDefault();
+  drag = {
+    id, el,
+    grabX: e.clientX + scrollX - r.left,
+    grabY: e.clientY + scrollY - r.top,
+    cx: e.clientX, cy: e.clientY,
+    startOrder: [...state.order],
+    armTop: e.clientY >= BAND,
+    armBottom: e.clientY <= innerHeight - BAND,
+    pointerId: e.pointerId,
+    target: e.currentTarget,
+    moved: false, raf: 0,
+  };
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch(err){}
+  e.currentTarget.focus({preventScroll:true});
+  el.classList.add('dragging');
+  document.body.classList.add('is-dragging');
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', cancelDrag);
+  window.addEventListener('keydown', onDragKey, true);
+  drag.raf = requestAnimationFrame(dragFrame);
+}
+
+function onDragMove(e){
+  if(!drag || e.pointerId !== drag.pointerId) return;
+  if(Math.abs(e.clientX-drag.cx) > 3 || Math.abs(e.clientY-drag.cy) > 3) drag.moved = true;
+  drag.cx = e.clientX; drag.cy = e.clientY;
+}
+
+function positionDrag(){
+  const r = rects.get(drag.id);
+  if(!r) return;
+  const dx = (drag.cx - drag.grabX) - (r.left - scrollX);
+  const dy = (drag.cy - drag.grabY) - (r.top - scrollY);
+  drag.el.style.transform = `translate(${dx}px,${dy}px) scale(1.035)`;
+}
+
+function dragFrame(){
+  if(!drag) return;
+  positionDrag();
+  if(drag.moved){
+    edgeScroll(drag.cy);
+    hitTest();
+  }
+  drag.raf = requestAnimationFrame(dragFrame);
+}
+
+function edgeScroll(clientY){
+  const h = innerHeight;
+  const nearTop = clientY < BAND, nearBottom = clientY > h - BAND;
+  if(!nearTop) drag.armTop = true;
+  if(!nearBottom) drag.armBottom = true;
+  let d = 0;
+  if(nearTop && drag.armTop) d = -(BAND-clientY)/BAND * 14;
+  else if(nearBottom && drag.armBottom) d = (clientY-(h-BAND))/BAND * 14;
+  if(d) scrollBy(0, d);
+}
+
+function hitTest(){
+  const px = drag.cx + scrollX, py = drag.cy + scrollY;
+  const vis = visibleIds();
+  const from = vis.indexOf(drag.id);
+  for(const oid of vis){
+    if(oid === drag.id) continue;
+    const r = rects.get(oid);
+    if(!r) continue;
+    if(px < r.left || px > r.left+r.width || py < r.top || py > r.top+r.height) continue;
+    const oi = vis.indexOf(oid);
+    const after = px > r.left + r.width/2;
+    let to = oi;
+    if(oi > from && !after) to = oi-1;
+    if(oi < from && after) to = oi+1;
+    if(to !== from){
+      flip(() => { if(moveTo(drag.id, to)) render(); }, drag.el);
+      positionDrag();
+    }
+    return;
+  }
+}
+
+function stopDrag(){
+  cancelAnimationFrame(drag.raf);
+  window.removeEventListener('pointermove', onDragMove);
+  window.removeEventListener('pointerup', endDrag);
+  window.removeEventListener('pointercancel', cancelDrag);
+  window.removeEventListener('keydown', onDragKey, true);
+  try { drag.target.releasePointerCapture(drag.pointerId); } catch(err){}
+  document.body.classList.remove('is-dragging');
+}
+
+function settle(){
+  const el = drag.el, from = el.style.transform;
+  el.style.transform = '';
+  el.classList.remove('dragging');
+  if(from && !REDUCED){
+    el.animate([{transform:from},{transform:'none'}],{duration:300, easing:EASE});
+  }
+}
+
+function endDrag(e){
+  if(!drag || e.pointerId !== drag.pointerId) return;
+  const {id, moved} = drag;
+  stopDrag();
+  settle();
+  drag = null;
+  measure();
+  if(moved){
+    renderManage();
+    announce(`${BY_ID.get(id).name} moved to position ${visibleIds().indexOf(id)+1} of ${visibleIds().length}.`);
+  }
+}
+
+function cancelDrag(){
+  if(!drag) return;
+  const reverted = drag.startOrder;
+  stopDrag();
+  settle();
+  const el = drag.el;
+  drag = null;
+  flip(() => { state.order = reverted; save(); render(); });
+  el.querySelector('.handle').focus();
+  announce('Move cancelled.');
+}
+function onDragKey(e){
+  if(e.key === 'Escape'){ e.preventDefault(); cancelDrag(); }
+}
+
+/* ---------- paint ---------- */
+function paint(){
+  for(const r of refs){
+    if(!r.el.isConnected) continue;
+    const p = parts(r.tz);
+    const hf = p.hour + p.minute/60 + p.second/3600;
+    const st = skyStyle(hf);
+    r.sky.style.background = st.bg;
+    r.el.style.color = st.ink;
+    r.el.style.setProperty('--dim', st.dim);
+    r.el.style.setProperty('--scrim', st.scrim);
+    r.el.style.setProperty('--edge', st.edge);
+    r.time.innerHTML = timeHTML(p);
+    r.date.textContent = `${p.weekday}, ${p.month} ${p.day}`;
+    if(r.offset) r.offset.textContent = p.off;
+
+    const pct = hf/24*100;
+    r.now.style.left = pct+'%';
+    r.fill.style.width = pct+'%';
+    r.now.style.background = st.day ? '#ffe9b0' : '#cdd6ff';
+    r.now.style.boxShadow = `0 0 10px 2px ${st.day?'rgba(255,220,140,.7)':'rgba(180,196,255,.55)'}`;
+  }
+}
+
+/* ---------- format toggle ---------- */
+const toggleEl = document.getElementById('toggle');
+const b24 = document.getElementById('b24'), b12 = document.getElementById('b12');
+function setFmt(v){
+  state.hour12 = v;
+  save();
+  toggleEl.classList.toggle('alt', v);
+  b24.classList.toggle('on', !v); b12.classList.toggle('on', v);
+  b24.setAttribute('aria-pressed', String(!v)); b12.setAttribute('aria-pressed', String(v));
+  paint();
+}
+b24.addEventListener('click', () => setFmt(false));
+b12.addEventListener('click', () => setFmt(true));
+
+/* ---------- go ---------- */
+buildHero();
+buildCards();
+render();
+setFmt(state.hour12);
+
+// stagger the tiles in on first paint only
+if(!REDUCED){
+  visibleIds().forEach((id,i) => {
+    const el = cards.get(id);
+    el.classList.add('reveal');
+    el.style.animationDelay = (0.045*(i+1))+'s';
+    el.addEventListener('animationend', () => {
+      el.classList.remove('reveal');
+      el.style.animationDelay = '';
+    }, {once:true});
+  });
+}
+
+requestAnimationFrame(() => requestAnimationFrame(() => {
+  document.body.classList.remove('booting');
+  measure();
+}));
+
+let last = -1;
+(function loop(){
+  const s = new Date().getSeconds();
+  if(s !== last){ last = s; paint(); }
+  requestAnimationFrame(loop);
+})();
+
+addEventListener('resize', measure);
+addEventListener('scroll', () => { if(!drag) measure(); }, {passive:true});
 </script>
 </body>
 </html>
